@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Theatre Fit + Auto-hide Header
 // @namespace    kymotsujason.ytfit
-// @version      2.3.0
-// @description  Theatre player fills the viewport, top nav auto-hides, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
+// @version      2.4.0
+// @description  Theatre player fills the viewport, top nav auto-hides, quality is pinned to the best available, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
 // @match        https://www.youtube.com/*
 // @run-at       document-start
 // @grant        none
@@ -14,7 +14,9 @@
 
   // Config
   const FORCE_THEATER = true; // false: leave the theatre/default toggle to YouTube (it remembers your choice)
-  const DEBUG = false;        // true: log theatre attributes, player location, and thumbnail size
+  const AUTO_QUALITY = true;  // false: leave quality to YouTube's auto
+  const MAX_QUALITY = null;   // null: best available. Or cap it: 'hd2160', 'hd1440', 'hd1080', 'hd720'
+  const DEBUG = false;        // true: log theatre attributes, player location, thumbnail size, and quality picks
 
   // Shared selector prefix for the active theatre/full-bleed player.
   const FB = 'html.ytfit-watch :is(ytd-watch-flexy[theater], ytd-watch-flexy[full-bleed-player]):not([fullscreen])';
@@ -235,6 +237,55 @@
     if (!inTheater(flexy)) sizeBtn.click();
   }
 
+  // Quality. The player element carries YouTube's player API, and both quality lists come back
+  // ordered best first. setPlaybackQualityRange pins the range so the adaptive logic cannot drop
+  // off the pick; its third argument selects a specific format, which is how the premium bitrate
+  // of a resolution gets chosen on accounts that have one.
+  const QUALITY_ORDER = ['highres', 'hd2880', 'hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+  function qualityAllowed(q) {
+    const i = QUALITY_ORDER.indexOf(q);
+    return i >= 0 && i >= Math.max(QUALITY_ORDER.indexOf(MAX_QUALITY), 0);
+  }
+  function pickQuality(player) {
+    const data = typeof player.getAvailableQualityData === 'function' ? player.getAvailableQualityData() : null;
+    if (data && data.length) {
+      const best = data.find((d) => d.isPlayable !== false && qualityAllowed(d.quality));
+      if (best) return { quality: best.quality, formatId: best.formatId };
+    }
+    const levels = typeof player.getAvailableQualityLevels === 'function' ? player.getAvailableQualityLevels() : [];
+    const best = levels.find(qualityAllowed);
+    return best ? { quality: best } : null;
+  }
+
+  // The list is empty until the video loads, and YouTube resets quality on each new video, so keep
+  // retrying on the widget interval until the player reports the pick, then stop so a manual
+  // quality change from the menu sticks.
+  let qualityHref = null;
+  let qualityTries = 0;
+  let qualityDone = false;
+  function ensureQuality() {
+    if (!AUTO_QUALITY || !isWatch()) return;
+    if (qualityHref !== location.href) {
+      qualityHref = location.href;
+      qualityTries = 0;
+      qualityDone = false;
+    }
+    if (qualityDone || qualityTries >= 12) return;
+    const player = document.querySelector('#movie_player');
+    if (!player) return;
+    const pick = pickQuality(player);
+    if (!pick) return;
+    qualityTries++;
+    if (typeof player.setPlaybackQualityRange === 'function') {
+      if (pick.formatId) player.setPlaybackQualityRange(pick.quality, pick.quality, pick.formatId);
+      else player.setPlaybackQualityRange(pick.quality, pick.quality);
+    }
+    if (typeof player.setPlaybackQuality === 'function') player.setPlaybackQuality(pick.quality);
+    const now = typeof player.getPlaybackQuality === 'function' ? player.getPlaybackQuality() : null;
+    if (now === pick.quality) qualityDone = true;
+    if (DEBUG) console.log('[ytfit] quality try', qualityTries, 'want', pick.quality, pick.formatId || '', 'now', now);
+  }
+
   // Rotate. Path centered at 18,18; the cropped viewBox (4 4 28 28) makes the icon fill about the
   // same fraction of the button as YouTube's own icons. Color, size, and outline come from our CSS.
   const ROTATE_SVG = '<svg viewBox="4 4 28 28"><path d="M23.65 12.35C22.2 10.9 20.21 10 18 10c-4.42 0-7.99 3.58'
@@ -361,6 +412,7 @@
 
   function ensureWidgets() {
     if (!isWatch()) return;
+    ensureQuality();
     ensureRotateButton();
     ensureTitleOverlay();
     refreshTitleText();
