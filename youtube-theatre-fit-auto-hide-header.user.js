@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Theatre Fit + Auto-hide Header
 // @namespace    kymotsujason.ytfit
-// @version      2.5.0
+// @version      2.5.1
 // @description  Theatre player fills the viewport, top nav auto-hides, quality is pinned to the best available, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
 // @match        https://www.youtube.com/*
 // @run-at       document-start
@@ -58,13 +58,36 @@
       min-height: 0 !important;
       max-height: none !important;
     }
-    /* Letterbox the video to fit the full-height player box. */
-    ${FB} #full-bleed-container video.html5-main-video {
+    /* Letterbox the video to fit the full-height player box. :where() drops its specificity so the
+       rotation rules below win when a rotation is active. */
+    :where(${FB} #full-bleed-container) video.html5-main-video {
       width: 100% !important;
       height: 100% !important;
       left: 0 !important;
       top: 0 !important;
       object-fit: contain !important;
+    }
+
+    /* Rotation lives here and not in the video's inline style, since YouTube rewrites that style
+       during playback (ad handoff, resizes) and would drop the transform. The swapped sizes come from
+       variables the script keeps in sync with the player box. */
+    html[data-ytfit-rotate="180"] #movie_player video.html5-main-video {
+      object-fit: contain !important;
+      transform: rotate(180deg) !important;
+    }
+    html:is([data-ytfit-rotate="90"], [data-ytfit-rotate="270"]) #movie_player video.html5-main-video {
+      position: absolute !important;
+      left: 50% !important;
+      top: 50% !important;
+      width: var(--ytfit-rot-w) !important;
+      height: var(--ytfit-rot-h) !important;
+      object-fit: contain !important;
+    }
+    html[data-ytfit-rotate="90"] #movie_player video.html5-main-video {
+      transform: translate(-50%, -50%) rotate(90deg) !important;
+    }
+    html[data-ytfit-rotate="270"] #movie_player video.html5-main-video {
+      transform: translate(-50%, -50%) rotate(270deg) !important;
     }
     ${FB} #full-bleed-container .ytp-cued-thumbnail-overlay,
     ${FB} #full-bleed-container .ytp-cued-thumbnail-overlay-image {
@@ -309,29 +332,17 @@
   }
 
   function applyRotation() {
-    const video = document.querySelector('#movie_player video.html5-main-video');
-    if (!video) return;
-    const s = video.style;
-    const clear = ['position', 'left', 'top', 'width', 'height', 'transform', 'object-fit'];
     if (rotation === 0) {
-      clear.forEach((p) => s.removeProperty(p));
+      html.removeAttribute('data-ytfit-rotate');
       return;
     }
-    s.setProperty('object-fit', 'contain', 'important');
-    if (rotation === 180) {
-      ['position', 'left', 'top', 'width', 'height'].forEach((p) => s.removeProperty(p));
-      s.setProperty('transform', 'rotate(180deg)', 'important');
-      return;
-    }
-    const player = video.closest('#movie_player');
+    html.setAttribute('data-ytfit-rotate', String(rotation));
+    if (rotation === 180) return;
+    const player = document.querySelector('#movie_player');
     const w = player ? player.clientWidth : window.innerWidth;
     const h = player ? player.clientHeight : window.innerHeight;
-    s.setProperty('position', 'absolute', 'important');
-    s.setProperty('left', '50%', 'important');
-    s.setProperty('top', '50%', 'important');
-    s.setProperty('width', h + 'px', 'important');
-    s.setProperty('height', w + 'px', 'important');
-    s.setProperty('transform', 'translate(-50%, -50%) rotate(' + rotation + 'deg)', 'important');
+    html.style.setProperty('--ytfit-rot-w', h + 'px');
+    html.style.setProperty('--ytfit-rot-h', w + 'px');
   }
 
   function ensureRotateButton() {
