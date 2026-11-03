@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Theatre Fit + Auto-hide Header
 // @namespace    kymotsujason.ytfit
-// @version      2.4.0
+// @version      2.4.1
 // @description  Theatre player fills the viewport, top nav auto-hides, quality is pinned to the best available, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
 // @match        https://www.youtube.com/*
 // @run-at       document-start
@@ -89,6 +89,7 @@
     html.ytfit-watch .ytp-fullscreen-button,
     html.ytfit-watch .ytp-prev-button,
     html.ytfit-watch .ytp-next-button,
+    html.ytfit-watch .ytp-remote-button,
     html.ytfit-watch .ytp-autonav-toggle-button-container,
     html.ytfit-watch button[data-tooltip-target-id="ytp-autonav-toggle-button"] {
       display: none !important;
@@ -288,10 +289,21 @@
 
   // Rotate. Path centered at 18,18; the cropped viewBox (4 4 28 28) makes the icon fill about the
   // same fraction of the button as YouTube's own icons. Color, size, and outline come from our CSS.
-  const ROTATE_SVG = '<svg viewBox="4 4 28 28"><path d="M23.65 12.35C22.2 10.9 20.21 10 18 10c-4.42 0-7.99 3.58'
+  const ROTATE_PATH = 'M23.65 12.35C22.2 10.9 20.21 10 18 10c-4.42 0-7.99 3.58'
     + '-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6'
-    + 'c1.66 0 3.14.69 4.22 1.78L19 17h7V10l-2.35 2.35z"/></svg>';
+    + 'c1.66 0 3.14.69 4.22 1.78L19 17h7V10l-2.35 2.35z';
   let rotation = 0;
+
+  // Built with DOM calls since YouTube's Trusted Types policy makes innerHTML throw in Chromium.
+  function makeRotateIcon() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '4 4 28 28');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', ROTATE_PATH);
+    svg.appendChild(path);
+    return svg;
+  }
 
   function applyRotation() {
     const video = document.querySelector('#movie_player video.html5-main-video');
@@ -327,7 +339,7 @@
     btn.className = 'ytfit-rotate-btn';
     btn.title = 'Rotate video 90 clockwise';
     btn.setAttribute('aria-label', 'Rotate video 90 degrees clockwise');
-    btn.innerHTML = ROTATE_SVG;
+    btn.appendChild(makeRotateIcon());
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       rotation = (rotation + 90) % 360;
