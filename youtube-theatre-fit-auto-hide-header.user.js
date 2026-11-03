@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Theatre Fit + Auto-hide Header
 // @namespace    kymotsujason.ytfit
-// @version      2.5.1
+// @version      2.5.2
 // @description  Theatre player fills the viewport, top nav auto-hides, quality is pinned to the best available, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
 // @match        https://www.youtube.com/*
 // @run-at       document-start
@@ -98,15 +98,6 @@
       background-size: contain !important;
       background-position: center center !important;
       background-repeat: no-repeat !important;
-    }
-
-    /* Hide the player until it lands in the full-bleed container, so it appears once at full size
-       instead of expanding from the temporary mount YouTube uses during initial load. */
-    html.ytfit-watch #movie_player {
-      transition: opacity 0.15s ease;
-    }
-    html.ytfit-watch.ytfit-loading #movie_player {
-      opacity: 0 !important;
     }
 
     /* Hide player controls we do not want. */
@@ -223,31 +214,52 @@
     }
   `;
 
+  // While the page boots, YouTube starts playback in a skeleton mount outside ytd-app and moves the
+  // player into the full-bleed container later, sometimes after an ad. Sizing the skeleton to the
+  // viewport too shows the player at full size from the first frame, with no jump and nothing hidden.
+  // Only with FORCE_THEATER, since in the default view the player ends up smaller than the viewport.
+  const SKELETON_CSS = `
+    html.ytfit-watch #player.skeleton {
+      position: fixed !important;
+      inset: 0 !important;
+      width: auto !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      max-width: none !important;
+      margin: 0 !important;
+      z-index: 2000 !important;
+      background: #000 !important;
+    }
+    html.ytfit-watch #player.skeleton :is(#player-wrap, #player-api, #movie_player, .html5-video-container) {
+      width: 100% !important;
+      height: 100% !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      max-width: none !important;
+      margin: 0 !important;
+    }
+    :where(html.ytfit-watch #player.skeleton) video.html5-main-video {
+      width: 100% !important;
+      height: 100% !important;
+      left: 0 !important;
+      top: 0 !important;
+      object-fit: contain !important;
+    }
+  `;
+
   const style = document.createElement('style');
   style.id = 'ytfit-style';
-  style.textContent = css;
+  style.textContent = FORCE_THEATER ? css + SKELETON_CSS : css;
   (document.head || document.documentElement).appendChild(style);
 
   const isWatch = () => location.pathname === '/watch';
   const html = document.documentElement;
-  const settled = () => !!document.querySelector('#full-bleed-container #movie_player');
 
-  // The loading mask is only for the initial mount. Once the player has settled into the full-bleed
-  // container once, never re-apply it, otherwise it would hide the player in the miniplayer (where
-  // #movie_player is reparented out of the full-bleed container).
-  let everSettled = false;
   function refreshState() {
     html.classList.toggle('ytfit-watch', isWatch());
-    if (settled()) everSettled = true;
-    html.classList.toggle('ytfit-loading', isWatch() && !everSettled);
   }
   refreshState();
-
-  const poll = setInterval(() => {
-    refreshState();
-    if (everSettled) clearInterval(poll);
-  }, 150);
-  setTimeout(() => { clearInterval(poll); html.classList.remove('ytfit-loading'); }, 8000);
 
   // Theatre fit
   let forcedForHref = null;
@@ -286,7 +298,8 @@
 
   // The list is empty until the video loads, and YouTube resets quality on each new video, so keep
   // retrying on the widget interval until the player reports the pick, then stop so a manual
-  // quality change from the menu sticks.
+  // quality change from the menu sticks. It waits until the video has played for a second, since
+  // switching earlier can cancel the first video download and delay the first frame.
   let qualityHref = null;
   let qualityTries = 0;
   let qualityDone = false;
@@ -300,6 +313,8 @@
     if (qualityDone || qualityTries >= 12) return;
     const player = document.querySelector('#movie_player');
     if (!player) return;
+    const video = player.querySelector('video.html5-main-video');
+    if (!video || video.paused || video.currentTime < 1) return;
     const pick = pickQuality(player);
     if (!pick) return;
     qualityTries++;
