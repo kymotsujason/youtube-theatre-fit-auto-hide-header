@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Theatre Fit + Auto-hide Header
 // @namespace    kymotsujason.ytfit
-// @version      2.4.1
+// @version      2.5.0
 // @description  Theatre player fills the viewport, top nav auto-hides, quality is pinned to the best available, plus a rotate button, an in-player title, and a slim progress bar that stays visible when the controls hide.
 // @match        https://www.youtube.com/*
 // @run-at       document-start
@@ -11,6 +11,9 @@
 
 (function () {
   'use strict';
+
+  // The same file can load both as a userscript and as an unpacked extension, so only the first copy runs.
+  if (document.getElementById('ytfit-style')) return;
 
   // Config
   const FORCE_THEATER = true; // false: leave the theatre/default toggle to YouTube (it remembers your choice)

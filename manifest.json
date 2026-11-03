@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Theatre Fit + Auto-hide Header",
+  "version": "2.5.0",
+  "description": "Theatre player fills the viewport, top nav auto-hides, and quality is pinned to the best available.",
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["youtube-theatre-fit-auto-hide-header.user.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}
